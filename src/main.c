@@ -52,10 +52,11 @@ int main(int argc, char **argv)
             app.metrics.oom_failures++;
             (void)pthread_mutex_unlock(&app.metrics.mutex);
             output_event(&app, "request allocation failed: oom");
+            output_oom(&app, "request allocation failed");
             continue;
         }
         request->id = index + 1;
-        request->passenger_id = (index % app.config.passengers) + 1;
+        request->passenger_id = index + 1;
         if (!queue_push(&app.queue, request)) memory_free(request);
         else app.metrics.submitted++;
     }

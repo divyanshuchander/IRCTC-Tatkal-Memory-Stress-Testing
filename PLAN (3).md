@@ -788,9 +788,8 @@ Support only essential values:
 
 ```text
 --seats
---passengers
 --requests
---threads
+--workers
 ```
 
 Validate ranges and use simple defaults.
@@ -811,7 +810,7 @@ Task 1.1.
 **Verify**
 
 ```bash
-./build/tatkal_poc --seats 10 --passengers 100 --requests 100 --threads 4
+./build/tatkal_poc --seats 10 --requests 100 --workers 4
 ./build/tatkal_poc --seats 0
 ```
 

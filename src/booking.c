@@ -19,7 +19,6 @@ static void result_metrics(struct app *app, bool success, bool oom, uint64_t lat
 {
     (void)pthread_mutex_lock(&app->metrics.mutex);
     app->metrics.completed++;
-    app->metrics.active--;
     app->metrics.failed += success ? 0U : 1U;
     app->metrics.successful += success ? 1U : 0U;
     app->metrics.oom_failures += oom ? 1U : 0U;
@@ -67,10 +66,6 @@ bool booking_process(struct app *app, const struct request *request)
     int seat;
     uint64_t latency;
     (void)clock_gettime(CLOCK_MONOTONIC, &start);
-    (void)pthread_mutex_lock(&app->metrics.mutex);
-    app->metrics.active++;
-    if (app->metrics.active > app->metrics.peak_active) app->metrics.peak_active = app->metrics.active;
-    (void)pthread_mutex_unlock(&app->metrics.mutex);
     seat = seat_take(&app->train);
     if (seat < 0) {
         char message[128];
@@ -86,6 +81,7 @@ bool booking_process(struct app *app, const struct request *request)
         seat_release(&app->train, seat);
         (void)snprintf(message, sizeof(message), "request=%" PRId64 " result=failed reason=oom seat_rolled_back=%d", request->id, seat);
         output_event(app, message);
+        output_oom(app, message);
         (void)clock_gettime(CLOCK_MONOTONIC, &finish);
         result_metrics(app, false, true, elapsed_ns(start, finish));
         return false;
@@ -127,16 +123,10 @@ void *booking_worker(void *argument)
 bool booking_init(struct app *app)
 {
     int index;
-    app->passengers = memory_alloc((size_t)app->config.passengers * sizeof(*app->passengers));
     app->train.seats = memory_alloc((size_t)app->config.seats * sizeof(*app->train.seats));
-    if (app->passengers == NULL || app->train.seats == NULL) {
+    if (app->train.seats == NULL) {
         memory_free(app->train.seats);
-        memory_free(app->passengers);
         return false;
-    }
-    for (index = 0; index < app->config.passengers; index++) {
-        app->passengers[index].id = index + 1;
-        app->passengers[index].age = 18 + (index % 60);
     }
     for (index = 0; index < app->config.seats; index++) {
         app->train.seats[index].number = index + 1;
@@ -154,14 +144,12 @@ bool booking_init(struct app *app)
         (void)pthread_mutex_destroy(&app->train.mutex);
         return false;
     }
-    if (!queue_init(&app->queue, app->config.queue_capacity)) {
+    if (!queue_init(&app->queue, app->config.workers * 2)) {
         (void)pthread_mutex_destroy(&app->metrics.mutex);
         (void)pthread_mutex_destroy(&app->reservations.mutex);
         (void)pthread_mutex_destroy(&app->train.mutex);
         memory_free(app->train.seats);
-        memory_free(app->passengers);
         app->train.seats = NULL;
-        app->passengers = NULL;
         return false;
     }
     return true;
@@ -180,5 +168,4 @@ void booking_cleanup(struct app *app)
     (void)pthread_mutex_destroy(&app->reservations.mutex);
     (void)pthread_mutex_destroy(&app->train.mutex);
     memory_free(app->train.seats);
-    memory_free(app->passengers);
 }

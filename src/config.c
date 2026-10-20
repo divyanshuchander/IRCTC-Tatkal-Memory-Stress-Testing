@@ -10,7 +10,7 @@
 
 void config_print_usage(const char *program)
 {
-    (void)printf("Usage: %s [--seats N] [--passengers N] [--requests N] [--workers N] [--queue-capacity N] [--fail-after N] [--output-dir PATH]\n", program);
+    (void)printf("Usage: %s [--seats N] [--requests N] [--workers N] [--fail-after N] [--output-dir PATH]\n", program);
 }
 
 static int positive_value(const char *text, int *value)
@@ -29,10 +29,8 @@ int config_parse(int argc, char **argv, struct config *config)
     int index;
     int value;
     config->seats = 10;
-    config->passengers = 100;
     config->requests = 100;
     config->workers = 4;
-    config->queue_capacity = 32;
     config->output_dir = "artifacts";
     for (index = 1; index < argc; index++) {
         if (strcmp(argv[index], "--help") == 0) {
@@ -47,15 +45,12 @@ int config_parse(int argc, char **argv, struct config *config)
             long parsed = strtol(argv[++index], &end, 10);
             if (end == argv[index] || *end != '\0' || parsed < 0) return 0;
             memory_fail_after(parsed);
-        } else if (strcmp(argv[index], "--seats") == 0 || strcmp(argv[index], "--passengers") == 0 || strcmp(argv[index], "--requests") == 0 || strcmp(argv[index], "--workers") == 0 || strcmp(argv[index], "--queue-capacity") == 0) {
+        } else if (strcmp(argv[index], "--seats") == 0 || strcmp(argv[index], "--requests") == 0 || strcmp(argv[index], "--workers") == 0) {
             if (!positive_value(argv[++index], &value)) return 0;
             if (strcmp(argv[index - 1], "--seats") == 0) config->seats = value;
-            else if (strcmp(argv[index - 1], "--passengers") == 0) config->passengers = value;
             else if (strcmp(argv[index - 1], "--requests") == 0) config->requests = value;
-            else if (strcmp(argv[index - 1], "--workers") == 0) config->workers = value;
-            else config->queue_capacity = value;
+            else config->workers = value;
         } else return 0;
     }
-    if (config->passengers < config->requests) config->passengers = config->requests;
     return 1;
 }

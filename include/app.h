@@ -10,11 +10,6 @@
 
 #include "config.h"
 
-struct passenger {
-    int id;
-    int age;
-};
-
 struct seat {
     int number;
     bool allocated;
@@ -65,8 +60,6 @@ struct metrics {
     size_t successful;
     size_t failed;
     size_t oom_failures;
-    size_t active;
-    size_t peak_active;
     uint64_t latency_total_ns;
     uint64_t latency_max_ns;
     struct timespec started;
@@ -76,7 +69,6 @@ struct metrics {
 
 struct app {
     struct config config;
-    struct passenger *passengers;
     struct train train;
     struct reservation_store reservations;
     struct request_queue queue;
@@ -84,6 +76,8 @@ struct app {
     pthread_mutex_t output_mutex;
     FILE *events;
     FILE *reservations_file;
+    FILE *memory_log;
+    FILE *oom_log;
     char run_dir[512];
 };
 

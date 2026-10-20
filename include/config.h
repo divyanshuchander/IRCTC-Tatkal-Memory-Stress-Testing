@@ -3,10 +3,8 @@
 
 struct config {
     int seats;
-    int passengers;
     int requests;
     int workers;
-    int queue_capacity;
     const char *output_dir;
 };
 

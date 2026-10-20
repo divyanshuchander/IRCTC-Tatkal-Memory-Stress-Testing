@@ -27,7 +27,7 @@ cppcheck:
 
 valgrind: debug
 	@mkdir -p artifacts/valgrind
-	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./$(TARGET) --seats 10 --passengers 100 --requests 100 --workers 4 --output-dir artifacts/valgrind
+	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes ./$(TARGET) --seats 10 --requests 100 --workers 4 --output-dir artifacts/valgrind
 
 clean:
 	rm -rf build

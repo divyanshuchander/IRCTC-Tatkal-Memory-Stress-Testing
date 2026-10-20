@@ -14,10 +14,8 @@ make cppcheck
 ```bash
 ./build/tatkal_poc \
 	--seats 10 \
-	--passengers 100 \
 	--requests 100 \
 	--workers 4 \
-	--queue-capacity 16 \
 	--output-dir artifacts
 ```
 
@@ -26,7 +24,9 @@ The program creates one timestamped run directory containing:
 ```text
 events.log          one result line per request
 reservations.csv    confirmed seat allocations
-metrics.csv         machine-readable run metrics
+metrics/metrics.csv machine-readable run metrics
+metrics/memory.log  allocation counters at report time
+metrics/oom.log     allocation-related failure events
 summary.txt         human-readable result summary
 ```
 
@@ -39,6 +39,8 @@ summary.txt         human-readable result summary
 ```
 
 The booking path releases a seat when reservation allocation fails. The output records failed requests, OOM failures, rollback events, latency, peak tracked bytes, and outstanding allocations at report time.
+
+The queue capacity is derived from the worker count, and passenger IDs are generated from request IDs. These implementation details do not need separate command-line flags.
 
 ## Source Modules
 
