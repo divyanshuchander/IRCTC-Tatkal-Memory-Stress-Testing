@@ -59,7 +59,6 @@ void output_event(struct app *app, const char *message)
 {
     (void)pthread_mutex_lock(&app->output_mutex);
     (void)fprintf(app->events, "%s\n", message);
-    (void)fflush(app->events);
     (void)pthread_mutex_unlock(&app->output_mutex);
 }
 
@@ -67,7 +66,6 @@ void output_oom(struct app *app, const char *message)
 {
     (void)pthread_mutex_lock(&app->output_mutex);
     (void)fprintf(app->oom_log, "%s\n", message);
-    (void)fflush(app->oom_log);
     (void)pthread_mutex_unlock(&app->output_mutex);
 }
 
@@ -75,7 +73,6 @@ void output_reservation(struct app *app, const struct reservation *reservation)
 {
     (void)pthread_mutex_lock(&app->output_mutex);
     (void)fprintf(app->reservations_file, "%" PRId64 ",%" PRId64 ",%d,%d,CONFIRMED\n", reservation->id, reservation->request_id, reservation->passenger_id, reservation->seat_number);
-    (void)fflush(app->reservations_file);
     (void)pthread_mutex_unlock(&app->output_mutex);
 }
 
@@ -86,28 +83,44 @@ void output_write_reports(struct app *app)
     uint64_t duration_ns;
     double seconds;
     double average_ms;
+    double max_ms;
+    double throughput;
+    double success_rate;
+    double failure_rate;
     char metrics_dir[640];
     if (clock_gettime(CLOCK_MONOTONIC, &app->metrics.finished) != 0) return;
-    duration_ns = (uint64_t)(app->metrics.finished.tv_sec - app->metrics.started.tv_sec) * 1000000000ULL + (uint64_t)(app->metrics.finished.tv_nsec - app->metrics.started.tv_nsec);
+    duration_ns = (uint64_t)(app->metrics.finished.tv_sec - app->metrics.started.tv_sec) * 1000000000ULL;
+    if (app->metrics.finished.tv_nsec >= app->metrics.started.tv_nsec) {
+        duration_ns += (uint64_t)(app->metrics.finished.tv_nsec - app->metrics.started.tv_nsec);
+    } else {
+        duration_ns -= 1000000000ULL;
+        duration_ns += (uint64_t)(app->metrics.finished.tv_nsec + 1000000000L - app->metrics.started.tv_nsec);
+    }
     seconds = (double)duration_ns / 1000000000.0;
     average_ms = app->metrics.completed == 0 ? 0.0 : (double)app->metrics.latency_total_ns / (double)app->metrics.completed / 1000000.0;
+    max_ms = (double)app->metrics.latency_max_ns / 1000000.0;
+    throughput = seconds > 0.0 ? (double)app->metrics.completed / seconds : 0.0;
+    success_rate = app->metrics.completed == 0 ? 0.0 : (double)app->metrics.successful * 100.0 / (double)app->metrics.completed;
+    failure_rate = app->metrics.completed == 0 ? 0.0 : (double)app->metrics.failed * 100.0 / (double)app->metrics.completed;
     if (snprintf(metrics_dir, sizeof(metrics_dir), "%s/metrics", app->run_dir) >= (int)sizeof(metrics_dir)) return;
     if (snprintf(path, sizeof(path), "%s/metrics.csv", metrics_dir) < (int)sizeof(path) && (file = fopen(path, "w")) != NULL) {
-        (void)fprintf(file, "metric,value\nrequests,%d\nsubmitted,%zu\ncompleted,%zu\nsuccessful,%zu\nfailed,%zu\noom_failures,%zu\nremaining_seats,%d\nreservations,%zu\nduration_seconds,%.6f\naverage_latency_ms,%.6f\nmax_latency_ms,%.6f\ncurrent_bytes,%zu\npeak_bytes,%zu\noutstanding_allocations,%zu\n", app->config.requests, app->metrics.submitted, app->metrics.completed, app->metrics.successful, app->metrics.failed, app->metrics.oom_failures, app->train.available, app->reservations.count, seconds, average_ms, (double)app->metrics.latency_max_ns / 1000000.0, memory_current_bytes(), memory_peak_bytes(), memory_outstanding());
+        (void)fprintf(file, "metric,value\nseats,%d\nworkers,%d\nrequests,%d\nqueued,%zu\nnot_queued,%zu\ncompleted,%zu\nsuccessful,%zu\nfailed,%zu\noom_failures,%zu\nunprocessed,%zu\nremaining_seats,%d\nreservations,%zu\nduration_seconds,%.6f\nthroughput_requests_per_second,%.6f\nsuccess_rate_percent,%.6f\nfailure_rate_percent,%.6f\naverage_latency_ms,%.6f\nmax_latency_ms,%.6f\nallocation_count,%zu\nfree_count,%zu\nallocation_failures,%zu\ncurrent_bytes,%zu\npeak_bytes,%zu\noutstanding_allocations,%zu\n", app->config.seats, app->config.workers, app->config.requests, app->metrics.submitted, (size_t)app->config.requests - app->metrics.submitted, app->metrics.completed, app->metrics.successful, app->metrics.failed, app->metrics.oom_failures, (size_t)app->config.requests - app->metrics.completed, app->train.available, app->reservations.count, seconds, throughput, success_rate, failure_rate, average_ms, max_ms, memory_allocations(), memory_frees(), memory_failures(), memory_current_bytes(), memory_peak_bytes(), memory_outstanding());
         (void)fclose(file);
     }
-    (void)fprintf(app->memory_log, "current_bytes=%zu peak_bytes=%zu allocations=%zu frees=%zu outstanding_allocations=%zu\n", memory_current_bytes(), memory_peak_bytes(), memory_allocations(), memory_frees(), memory_outstanding());
+    (void)fprintf(app->memory_log, "current_bytes=%zu peak_bytes=%zu allocations=%zu frees=%zu allocation_failures=%zu outstanding_allocations=%zu\n", memory_current_bytes(), memory_peak_bytes(), memory_allocations(), memory_frees(), memory_failures(), memory_outstanding());
     (void)fflush(app->memory_log);
     if (snprintf(path, sizeof(path), "%s/summary.txt", app->run_dir) < (int)sizeof(path) && (file = fopen(path, "w")) != NULL) {
-        (void)fprintf(file, "IRCTC Tatkal memory stress run\nrequests: %d\ncompleted: %zu\nsuccessful: %zu\nfailed: %zu\nremaining seats: %d\nduration seconds: %.6f\naverage latency ms: %.6f\npeak tracked bytes: %zu\noutstanding allocations: %zu\n", app->config.requests, app->metrics.completed, app->metrics.successful, app->metrics.failed, app->train.available, seconds, average_ms, memory_peak_bytes(), memory_outstanding());
+        (void)fprintf(file, "IRCTC Tatkal memory stress run\n\nConfiguration\n seats: %d\n workers: %d\n requested requests: %d\n output directory: %s\n\nRequest results\n queued: %zu\n not queued: %zu\n completed: %zu\n unprocessed: %zu\n successful: %zu (%.2f%%)\n failed: %zu (%.2f%%)\n OOM failures: %zu\n\nSeat results\n reservations: %zu\n remaining seats: %d\n\nPerformance\n duration seconds: %.6f\n throughput requests/second: %.2f\n average latency ms: %.6f\n maximum latency ms: %.6f\n\nMemory\n current tracked bytes: %zu\n peak tracked bytes: %zu\n allocations: %zu\n frees: %zu\n allocation failures: %zu\n outstanding allocations: %zu\n\nReports\n events: events.log\n reservations: reservations.csv\n metrics: metrics/metrics.csv\n memory log: metrics/memory.log\n OOM log: metrics/oom.log\n", app->config.seats, app->config.workers, app->config.requests, app->config.output_dir, app->metrics.submitted, (size_t)app->config.requests - app->metrics.submitted, app->metrics.completed, (size_t)app->config.requests - app->metrics.completed, app->metrics.successful, success_rate, app->metrics.failed, failure_rate, app->metrics.oom_failures, app->reservations.count, app->train.available, seconds, throughput, average_ms, max_ms, memory_current_bytes(), memory_peak_bytes(), memory_allocations(), memory_frees(), memory_failures(), memory_outstanding());
         (void)fclose(file);
     }
 }
 
 void output_close(struct app *app)
 {
+    (void)pthread_mutex_lock(&app->output_mutex);
     if (app->events != NULL) (void)fclose(app->events);
     if (app->reservations_file != NULL) (void)fclose(app->reservations_file);
     if (app->memory_log != NULL) (void)fclose(app->memory_log);
     if (app->oom_log != NULL) (void)fclose(app->oom_log);
+    (void)pthread_mutex_unlock(&app->output_mutex);
 }

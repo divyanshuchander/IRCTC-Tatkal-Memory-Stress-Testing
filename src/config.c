@@ -10,7 +10,7 @@
 
 void config_print_usage(const char *program)
 {
-    (void)printf("Usage: %s [--seats N] [--requests N] [--workers N] [--fail-after N] [--output-dir PATH]\n", program);
+    printf("Usage: %s [--seats N] [--requests N] [--workers N] [--fail-after N] [--output-dir PATH]\n", program);
 }
 
 static int positive_value(const char *text, int *value)
