@@ -2,6 +2,7 @@
 
 extern "C" {
 #include "config.h"
+#include "memory.h"
 }
 
 TEST(ConfigParseTest, DefaultSeats)
@@ -40,4 +41,20 @@ TEST(ConfigParseTest, RejectsUnknownOption)
     config parsed_config{};
 
     ASSERT_EQ(config_parse(3, argv, &parsed_config), 0);
+}
+
+TEST(MemoryTest, NormalAllocation){
+    void* ptr = memory_alloc(10);
+    ASSERT_NE(ptr , nullptr);
+    memory_free(ptr);
+}
+
+TEST(MemoryTest, zeroSizeAllocation){
+    ASSERT_EQ(memory_alloc(0) , nullptr);
+}
+
+TEST(MemoryTest, memoryOutstanding){
+    void* ptr = memory_alloc(10);
+    memory_free(ptr);
+    ASSERT_EQ(memory_outstanding(), 0);
 }
