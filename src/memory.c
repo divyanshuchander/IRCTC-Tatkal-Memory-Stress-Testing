@@ -58,10 +58,63 @@ void memory_free(void *pointer)
     free(header);
 }
 
-void memory_fail_after(long allocation_number) { fail_after = allocation_number; }
-size_t memory_current_bytes(void) { return current_bytes; }
-size_t memory_peak_bytes(void) { return peak_bytes; }
-size_t memory_allocations(void) { return allocations; }
-size_t memory_frees(void) { return frees; }
-size_t memory_failures(void) { return failures; }
-size_t memory_outstanding(void) { return allocations - frees; }
+void memory_fail_after(long allocation_number)
+{
+    (void)pthread_mutex_lock(&lock);
+    fail_after = allocation_number;
+    (void)pthread_mutex_unlock(&lock);
+}
+
+size_t memory_current_bytes(void)
+{
+    size_t value;
+    (void)pthread_mutex_lock(&lock);
+    value = current_bytes;
+    (void)pthread_mutex_unlock(&lock);
+    return value;
+}
+
+size_t memory_peak_bytes(void)
+{
+    size_t value;
+    (void)pthread_mutex_lock(&lock);
+    value = peak_bytes;
+    (void)pthread_mutex_unlock(&lock);
+    return value;
+}
+
+size_t memory_allocations(void)
+{
+    size_t value;
+    (void)pthread_mutex_lock(&lock);
+    value = allocations;
+    (void)pthread_mutex_unlock(&lock);
+    return value;
+}
+
+size_t memory_frees(void)
+{
+    size_t value;
+    (void)pthread_mutex_lock(&lock);
+    value = frees;
+    (void)pthread_mutex_unlock(&lock);
+    return value;
+}
+
+size_t memory_failures(void)
+{
+    size_t value;
+    (void)pthread_mutex_lock(&lock);
+    value = failures;
+    (void)pthread_mutex_unlock(&lock);
+    return value;
+}
+
+size_t memory_outstanding(void)
+{
+    size_t value;
+    (void)pthread_mutex_lock(&lock);
+    value = allocations - frees;
+    (void)pthread_mutex_unlock(&lock);
+    return value;
+}

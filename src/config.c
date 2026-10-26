@@ -10,7 +10,7 @@
 
 void config_print_usage(const char *program)
 {
-    printf("Usage: %s [--seats N] [--requests N] [--workers N] [--fail-after N] [--output-dir PATH]\n", program);
+    printf("Usage: %s [--seats N] [--requests N] [--workers N] [--fail-after N] [--verbose] [--output-dir PATH]\n", program);
 }
 
 static int positive_value(const char *text, int *value)
@@ -31,11 +31,16 @@ int config_parse(int argc, char **argv, struct config *config)
     config->seats = 10;
     config->requests = 100;
     config->workers = 4;
+    config->verbose = false;
     config->output_dir = "artifacts";
     for (index = 1; index < argc; index++) {
         if (strcmp(argv[index], "--help") == 0) {
             config_print_usage(argv[0]);
             return 2;
+        }
+        if (strcmp(argv[index], "--verbose") == 0) {
+            config->verbose = true;
+            continue;
         }
         if (index + 1 >= argc) return 0;
         if (strcmp(argv[index], "--output-dir") == 0) {

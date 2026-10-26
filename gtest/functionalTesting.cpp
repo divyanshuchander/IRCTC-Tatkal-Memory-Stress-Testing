@@ -13,6 +13,26 @@ extern "C" {
 #include "queue.h"
 }
 
+struct QueueThreadData {
+    request_queue *queue;
+    request *request_value;
+    request *result;
+};
+
+static void *push_request(void *argument)
+{
+    QueueThreadData *data = static_cast<QueueThreadData *>(argument);
+    data->result = queue_push(data->queue, data->request_value) ? data->request_value : nullptr;
+    return nullptr;
+}
+
+static void *pop_request(void *argument)
+{
+    QueueThreadData *data = static_cast<QueueThreadData *>(argument);
+    data->result = queue_pop(data->queue);
+    return nullptr;
+}
+
 TEST(ConfigParseTest, DefaultValues)
 {
     char program[] = "test_config";
@@ -60,6 +80,17 @@ TEST(ConfigParseTest, ParsesWorkers)
 
     ASSERT_EQ(config_parse(3, argv, &parsed_config), 1);
     ASSERT_EQ(parsed_config.workers, 2);
+}
+
+TEST(ConfigParseTest, ParsesVerbose)
+{
+    char program[] = "test_config";
+    char option[] = "--verbose";
+    char *argv[] = {program, option, nullptr};
+    config parsed_config{};
+
+    ASSERT_EQ(config_parse(2, argv, &parsed_config), 1);
+    ASSERT_TRUE(parsed_config.verbose);
 }
 
 TEST(ConfigParseTest, ParsesOutputDirectory)
@@ -234,6 +265,15 @@ TEST(QueueTest, InitializesQueue)
     queue_destroy(&queue);
 }
 
+TEST(QueueTest, RejectsAllocationFailure)
+{
+    request_queue queue{};
+
+    memory_fail_after(0);
+    ASSERT_FALSE(queue_init(&queue, 2));
+    memory_fail_after(-1);
+}
+
 TEST(QueueTest, PushAndPopRequest)
 {
     request_queue queue{};
@@ -290,6 +330,42 @@ TEST(QueueTest, RejectsPushAfterClose)
     ASSERT_TRUE(queue_init(&queue, 2));
     queue_close(&queue);
     ASSERT_FALSE(queue_push(&queue, &request));
+    queue_destroy(&queue);
+}
+
+TEST(QueueTest, PushWaitsForAvailableCapacity)
+{
+    request_queue queue{};
+    request first{1, 10};
+    request second{2, 20};
+    QueueThreadData data{&queue, &second, nullptr};
+    pthread_t thread;
+
+    ASSERT_TRUE(queue_init(&queue, 1));
+    ASSERT_TRUE(queue_push(&queue, &first));
+    ASSERT_EQ(pthread_create(&thread, nullptr, push_request, &data), 0);
+    usleep(10000);
+    ASSERT_EQ(queue_pop(&queue), &first);
+    ASSERT_EQ(pthread_join(thread, nullptr), 0);
+    ASSERT_EQ(data.result, &second);
+    ASSERT_EQ(queue_pop(&queue), &second);
+    queue_destroy(&queue);
+}
+
+TEST(QueueTest, PopWaitsForAvailableRequest)
+{
+    request_queue queue{};
+    request queued{1, 10};
+    QueueThreadData data{&queue, nullptr, nullptr};
+    pthread_t thread;
+
+    ASSERT_TRUE(queue_init(&queue, 1));
+    ASSERT_EQ(pthread_create(&thread, nullptr, pop_request, &data), 0);
+    usleep(10000);
+    ASSERT_TRUE(queue_push(&queue, &queued));
+    ASSERT_EQ(pthread_join(thread, nullptr), 0);
+    ASSERT_EQ(data.result, &queued);
+    queue_close(&queue);
     queue_destroy(&queue);
 }
 
@@ -356,6 +432,31 @@ TEST(BookingTest, FailsWhenNoSeatsAreAvailable)
     ASSERT_EQ(application.train.available, 0);
     ASSERT_EQ(application.reservations.count, 1);
     ASSERT_EQ(application.metrics.failed, 1);
+
+    output_close(&application);
+    pthread_mutex_destroy(&application.output_mutex);
+    booking_cleanup(&application);
+}
+
+TEST(BookingTest, RollsBackSeatWhenReservationAllocationFails)
+{
+    app application{};
+    application.config.seats = 1;
+    application.config.workers = 1;
+    pthread_mutex_init(&application.output_mutex, nullptr);
+    application.events = tmpfile();
+    application.reservations_file = tmpfile();
+    application.oom_log = tmpfile();
+    request booking_request{1, 10};
+
+    ASSERT_TRUE(booking_init(&application));
+    memory_fail_after(0);
+    ASSERT_FALSE(booking_process(&application, &booking_request));
+    memory_fail_after(-1);
+    ASSERT_EQ(application.train.available, 1);
+    ASSERT_EQ(application.reservations.count, 0);
+    ASSERT_EQ(application.metrics.reservation_oom_failures, 1);
+    ASSERT_EQ(application.metrics.seat_rollbacks, 1);
 
     output_close(&application);
     pthread_mutex_destroy(&application.output_mutex);
@@ -457,8 +558,37 @@ TEST(OutputTest, PreparesOutputFiles)
     ASSERT_NE(application.reservations_file, nullptr);
     ASSERT_NE(application.memory_log, nullptr);
     ASSERT_NE(application.oom_log, nullptr);
+    ASSERT_NE(application.system_metrics_file, nullptr);
 
     pthread_mutex_init(&application.output_mutex, nullptr);
+    output_close(&application);
+    pthread_mutex_destroy(&application.output_mutex);
+}
+
+TEST(OutputTest, SamplesSystemMetrics)
+{
+    char directory[] = "/tmp/tatkal-system-metrics-XXXXXX";
+    app application{};
+    application.config.output_dir = mkdtemp(directory);
+
+    ASSERT_NE(application.config.output_dir, nullptr);
+    ASSERT_TRUE(output_prepare(&application));
+    pthread_mutex_init(&application.output_mutex, nullptr);
+    ASSERT_TRUE(output_start_system_metrics(&application));
+    usleep(600000);
+    output_stop_system_metrics(&application);
+
+    char system_path[640];
+    snprintf(system_path, sizeof(system_path), "%s/metrics/system.csv", application.run_dir);
+    FILE *system_file = fopen(system_path, "r");
+    ASSERT_NE(system_file, nullptr);
+    char header[100] = {};
+    char sample[100] = {};
+    ASSERT_NE(fgets(header, sizeof(header), system_file), nullptr);
+    ASSERT_STREQ(header, "elapsed_ms,rss_kb,vmsize_kb,threads,tracked_bytes,peak_tracked_bytes\n");
+    ASSERT_NE(fgets(sample, sizeof(sample), system_file), nullptr);
+    fclose(system_file);
+
     output_close(&application);
     pthread_mutex_destroy(&application.output_mutex);
 }

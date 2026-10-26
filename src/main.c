@@ -32,6 +32,12 @@ int main(int argc, char **argv)
         booking_cleanup(&app);
         return EXIT_FAILURE;
     }
+    if (!output_start_system_metrics(&app)) {
+        output_close(&app);
+        (void)pthread_mutex_destroy(&app.output_mutex);
+        booking_cleanup(&app);
+        return EXIT_FAILURE;
+    }
     workers = memory_alloc((size_t)app.config.workers * sizeof(*workers));
     if (workers == NULL) {
         output_close(&app);
@@ -50,6 +56,7 @@ int main(int argc, char **argv)
             app.metrics.completed++;
             app.metrics.failed++;
             app.metrics.oom_failures++;
+            app.metrics.request_oom_failures++;
             (void)pthread_mutex_unlock(&app.metrics.mutex);
             output_event(&app, "request allocation failed: oom");
             output_oom(&app, "request allocation failed");
@@ -58,13 +65,17 @@ int main(int argc, char **argv)
         request->id = index + 1;
         request->passenger_id = index + 1;
         if (!queue_push(&app.queue, request)) memory_free(request);
-        else app.metrics.submitted++;
+        else {
+            (void)pthread_mutex_lock(&app.metrics.mutex);
+            app.metrics.submitted++;
+            (void)pthread_mutex_unlock(&app.metrics.mutex);
+        }
     }
     queue_close(&app.queue);
     for (index = 0; index < created; index++) (void)pthread_join(workers[index], NULL);
     memory_free(workers);
     output_write_reports(&app);
-    (void)printf("Run artifacts: %s\nBookings: %zu successful, %zu failed\nRemaining seats: %d\nPeak tracked bytes: %zu\nOOM failures: %zu\n", app.run_dir, app.metrics.successful, app.metrics.failed, app.train.available, memory_peak_bytes(), memory_failures());
+    (void)printf("Run artifacts: %s\nBookings: %zu successful, %zu failed\nRemaining seats: %d\nPeak tracked bytes: %zu\nOOM failures: %zu (request: %zu, reservation: %zu)\nSeat rollbacks: %zu\n", app.run_dir, app.metrics.successful, app.metrics.failed, app.train.available, memory_peak_bytes(), memory_failures(), app.metrics.request_oom_failures, app.metrics.reservation_oom_failures, app.metrics.seat_rollbacks);
     output_close(&app);
     (void)pthread_mutex_destroy(&app.output_mutex);
     booking_cleanup(&app);

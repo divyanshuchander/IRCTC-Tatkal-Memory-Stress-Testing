@@ -60,6 +60,9 @@ struct metrics {
     size_t successful;
     size_t failed;
     size_t oom_failures;
+    size_t request_oom_failures;
+    size_t reservation_oom_failures;
+    size_t seat_rollbacks;
     uint64_t latency_total_ns;
     uint64_t latency_max_ns;
     struct timespec started;
@@ -78,6 +81,10 @@ struct app {
     FILE *reservations_file;
     FILE *memory_log;
     FILE *oom_log;
+    FILE *system_metrics_file;
+    pthread_t system_metrics_thread;
+    bool system_metrics_active;
+    bool system_metrics_stop;
     char run_dir[512];
 };
 

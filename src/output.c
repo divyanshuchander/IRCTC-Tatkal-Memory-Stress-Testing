@@ -11,6 +11,49 @@
 #include "memory.h"
 #include "output.h"
 
+static void *system_metrics_worker(void *argument)
+{
+    struct app *app = argument;
+    struct timespec delay = {0, 500000000L};
+    unsigned long elapsed_ms = 0;
+
+    while (true) {
+        FILE *status = fopen("/proc/self/status", "r");
+        char line[128];
+        unsigned long rss_kb = 0;
+        unsigned long virtual_kb = 0;
+        unsigned long threads = 0;
+
+        if (status != NULL) {
+            while (fgets(line, sizeof(line), status) != NULL) {
+                if (sscanf(line, "VmRSS: %lu kB", &rss_kb) == 1) continue;
+                if (sscanf(line, "VmSize: %lu kB", &virtual_kb) == 1) continue;
+                (void)sscanf(line, "Threads: %lu", &threads);
+            }
+            (void)fclose(status);
+        }
+        (void)pthread_mutex_lock(&app->output_mutex);
+        if (app->system_metrics_stop) {
+            (void)pthread_mutex_unlock(&app->output_mutex);
+            break;
+        }
+        (void)fprintf(app->system_metrics_file, "%lu,%lu,%lu,%lu,%zu,%zu\n",
+                      elapsed_ms, rss_kb, virtual_kb, threads,
+                      memory_current_bytes(), memory_peak_bytes());
+        (void)fflush(app->system_metrics_file);
+        if (app->config.verbose) {
+            (void)printf("[metrics] elapsed=%lums rss=%lukB tracked=%zuB peak=%zuB threads=%lu\n",
+                         elapsed_ms, rss_kb, memory_current_bytes(),
+                         memory_peak_bytes(), threads);
+            (void)fflush(stdout);
+        }
+        (void)pthread_mutex_unlock(&app->output_mutex);
+        (void)nanosleep(&delay, NULL);
+        elapsed_ms += 500;
+    }
+    return NULL;
+}
+
 static bool make_dirs(const char *path)
 {
     char buffer[512];
@@ -51,7 +94,11 @@ bool output_prepare(struct app *app)
     app->memory_log = fopen(path, "w");
     if (snprintf(path, sizeof(path), "%s/oom.log", metrics_dir) >= (int)sizeof(path)) return false;
     app->oom_log = fopen(path, "w");
-    if (app->memory_log == NULL || app->oom_log == NULL) return false;
+    if (snprintf(path, sizeof(path), "%s/system.csv", metrics_dir) >= (int)sizeof(path)) return false;
+    app->system_metrics_file = fopen(path, "w");
+    if (app->memory_log == NULL || app->oom_log == NULL || app->system_metrics_file == NULL) return false;
+    (void)fprintf(app->system_metrics_file, "elapsed_ms,rss_kb,vmsize_kb,threads,tracked_bytes,peak_tracked_bytes\n");
+    (void)fflush(app->system_metrics_file);
     return true;
 }
 
@@ -59,6 +106,10 @@ void output_event(struct app *app, const char *message)
 {
     (void)pthread_mutex_lock(&app->output_mutex);
     (void)fprintf(app->events, "%s\n", message);
+    if (app->config.verbose) {
+        (void)printf("%s\n", message);
+        (void)fflush(stdout);
+    }
     (void)pthread_mutex_unlock(&app->output_mutex);
 }
 
@@ -104,7 +155,7 @@ void output_write_reports(struct app *app)
     failure_rate = app->metrics.completed == 0 ? 0.0 : (double)app->metrics.failed * 100.0 / (double)app->metrics.completed;
     if (snprintf(metrics_dir, sizeof(metrics_dir), "%s/metrics", app->run_dir) >= (int)sizeof(metrics_dir)) return;
     if (snprintf(path, sizeof(path), "%s/metrics.csv", metrics_dir) < (int)sizeof(path) && (file = fopen(path, "w")) != NULL) {
-        (void)fprintf(file, "metric,value\nseats,%d\nworkers,%d\nrequests,%d\nqueued,%zu\nnot_queued,%zu\ncompleted,%zu\nsuccessful,%zu\nfailed,%zu\noom_failures,%zu\nunprocessed,%zu\nremaining_seats,%d\nreservations,%zu\nduration_seconds,%.6f\nthroughput_requests_per_second,%.6f\nsuccess_rate_percent,%.6f\nfailure_rate_percent,%.6f\naverage_latency_ms,%.6f\nmax_latency_ms,%.6f\nallocation_count,%zu\nfree_count,%zu\nallocation_failures,%zu\ncurrent_bytes,%zu\npeak_bytes,%zu\noutstanding_allocations,%zu\n", app->config.seats, app->config.workers, app->config.requests, app->metrics.submitted, (size_t)app->config.requests - app->metrics.submitted, app->metrics.completed, app->metrics.successful, app->metrics.failed, app->metrics.oom_failures, (size_t)app->config.requests - app->metrics.completed, app->train.available, app->reservations.count, seconds, throughput, success_rate, failure_rate, average_ms, max_ms, memory_allocations(), memory_frees(), memory_failures(), memory_current_bytes(), memory_peak_bytes(), memory_outstanding());
+        (void)fprintf(file, "metric,value\nseats,%d\nworkers,%d\nrequests,%d\nverbose,%d\nqueued,%zu\nnot_queued,%zu\ncompleted,%zu\nsuccessful,%zu\nfailed,%zu\noom_failures,%zu\nrequest_oom_failures,%zu\nreservation_oom_failures,%zu\nseat_rollbacks,%zu\nunprocessed,%zu\nremaining_seats,%d\nreservations,%zu\nduration_seconds,%.6f\nthroughput_requests_per_second,%.6f\nsuccess_rate_percent,%.6f\nfailure_rate_percent,%.6f\naverage_latency_ms,%.6f\nmax_latency_ms,%.6f\nallocation_count,%zu\nfree_count,%zu\nallocation_failures,%zu\ncurrent_bytes,%zu\npeak_bytes,%zu\noutstanding_allocations,%zu\n", app->config.seats, app->config.workers, app->config.requests, app->config.verbose, app->metrics.submitted, (size_t)app->config.requests - app->metrics.submitted, app->metrics.completed, app->metrics.successful, app->metrics.failed, app->metrics.oom_failures, app->metrics.request_oom_failures, app->metrics.reservation_oom_failures, app->metrics.seat_rollbacks, (size_t)app->config.requests - app->metrics.completed, app->train.available, app->reservations.count, seconds, throughput, success_rate, failure_rate, average_ms, max_ms, memory_allocations(), memory_frees(), memory_failures(), memory_current_bytes(), memory_peak_bytes(), memory_outstanding());
         (void)fclose(file);
     }
     (void)fprintf(app->memory_log, "current_bytes=%zu peak_bytes=%zu allocations=%zu frees=%zu allocation_failures=%zu outstanding_allocations=%zu\n", memory_current_bytes(), memory_peak_bytes(), memory_allocations(), memory_frees(), memory_failures(), memory_outstanding());
@@ -115,12 +166,33 @@ void output_write_reports(struct app *app)
     }
 }
 
+bool output_start_system_metrics(struct app *app)
+{
+    if (app->system_metrics_file == NULL) return false;
+    app->system_metrics_stop = false;
+    if (pthread_create(&app->system_metrics_thread, NULL, system_metrics_worker, app) != 0) return false;
+    app->system_metrics_active = true;
+    return true;
+}
+
+void output_stop_system_metrics(struct app *app)
+{
+    if (!app->system_metrics_active) return;
+    (void)pthread_mutex_lock(&app->output_mutex);
+    app->system_metrics_stop = true;
+    (void)pthread_mutex_unlock(&app->output_mutex);
+    (void)pthread_join(app->system_metrics_thread, NULL);
+    app->system_metrics_active = false;
+}
+
 void output_close(struct app *app)
 {
+    output_stop_system_metrics(app);
     (void)pthread_mutex_lock(&app->output_mutex);
     if (app->events != NULL) (void)fclose(app->events);
     if (app->reservations_file != NULL) (void)fclose(app->reservations_file);
     if (app->memory_log != NULL) (void)fclose(app->memory_log);
     if (app->oom_log != NULL) (void)fclose(app->oom_log);
+    if (app->system_metrics_file != NULL) (void)fclose(app->system_metrics_file);
     (void)pthread_mutex_unlock(&app->output_mutex);
 }

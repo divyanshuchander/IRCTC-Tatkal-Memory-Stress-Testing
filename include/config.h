@@ -1,10 +1,13 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <stdbool.h>
+
 struct config {
     int seats;
     int requests;
     int workers;
+    bool verbose;
     const char *output_dir;
 };
 

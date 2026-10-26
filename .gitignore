@@ -1,2 +1,6 @@
 build/
 artifacts/
+gtest/runTest
+gtest/*.o
+gtest/*.gcno
+gtest/*.gcda

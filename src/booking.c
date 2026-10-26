@@ -79,6 +79,10 @@ bool booking_process(struct app *app, const struct request *request)
     if (reservation == NULL) {
         char message[128];
         seat_release(&app->train, seat);
+        (void)pthread_mutex_lock(&app->metrics.mutex);
+        app->metrics.reservation_oom_failures++;
+        app->metrics.seat_rollbacks++;
+        (void)pthread_mutex_unlock(&app->metrics.mutex);
         (void)snprintf(message, sizeof(message), "request=%" PRId64 " result=failed reason=oom seat_rolled_back=%d", request->id, seat);
         output_event(app, message);
         output_oom(app, message);
