@@ -1,0 +1,21 @@
+Cppcheck Static Analysis Report
+===============================
+
+Generated: 2026-10-27 03:01:51 UTC
+Tool: Cppcheck 2.13.0
+Command: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --suppress=missingIncludeSystem src
+
+Checking src/booking.c ...
+1/6 files checked 21% done
+Checking src/config.c ...
+2/6 files checked 29% done
+Checking src/main.c ...
+3/6 files checked 40% done
+Checking src/memory.c ...
+4/6 files checked 50% done
+Checking src/output.c ...
+5/6 files checked 90% done
+Checking src/queue.c ...
+6/6 files checked 100% done
+
+Cppcheck exit status: 0

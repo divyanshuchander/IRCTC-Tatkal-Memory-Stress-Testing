@@ -3,6 +3,11 @@ CXX := g++
 
 CFLAGS := -Iinclude -std=c11 -Wall -Wextra -Wpedantic -Wconversion -Wshadow -g -O0
 CXXFLAGS := -Iinclude -std=c++17 -Wall -Wextra -Wpedantic -g -O0
+MISRA_CFLAGS := -Iinclude -std=c11 -D_POSIX_C_SOURCE=200809L \
+	-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wcast-qual \
+	-Wpointer-arith -Wstrict-prototypes -Wmissing-prototypes \
+	-Wold-style-definition -Wswitch-enum -Wundef -Wvla -Wformat=2 \
+	-Werror -g -O0
 
 APP := build/tatkal_poc
 TEST := gtest/runTest
@@ -12,7 +17,7 @@ LIB_SRC := src/config.c src/memory.c src/queue.c src/booking.c src/output.c
 APP_OBJ := $(APP_SRC:src/%.c=build/%.o)
 TEST_OBJ := $(LIB_SRC:src/%.c=build/gtest/%.o)
 
-.PHONY: all build test run coverage cppcheck valgrind clean
+.PHONY: all build misra-compile test run coverage cppcheck valgrind clean
 
 all: build
 
@@ -24,6 +29,15 @@ $(APP): $(APP_OBJ)
 build/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+misra-compile:
+	@rm -rf build/misra
+	@mkdir -p build/misra
+	@for source in $(APP_SRC); do \
+		object=build/misra/$$(basename "$${source%.c}.o"); \
+		$(CC) $(MISRA_CFLAGS) -c "$$source" -pthread -o "$$object" || exit 1; \
+	done
+	$(CC) build/misra/*.o -pthread -o build/misra/tatkal_poc
 
 test: $(TEST)
 	./$(TEST)

@@ -1,0 +1,140 @@
+IRCTC Tatkal - Important Test Commands
+======================================
+
+Run everything from the repository root.
+
+1. Build
+--------
+
+make clean
+make build
+
+2. Normal baseline
+------------------
+
+./build/tatkal_poc \
+    --seats 10 \
+    --requests 100 \
+    --workers 4 \
+    --output-dir artifacts/baseline
+
+3. High contention
+------------------
+
+Many requests compete for a small number of seats.
+
+./build/tatkal_poc \
+    --seats 5 \
+    --requests 10000 \
+    --workers 16 \
+    --output-dir artifacts/contention
+
+4. Verbose mode with process memory metrics
+-------------------------------------------
+
+Shows RSS, virtual memory, tracked bytes, peak bytes, and thread count.
+
+./build/tatkal_poc \
+    --seats 100 \
+    --requests 200000 \
+    --workers 16 \
+    --verbose \
+    --output-dir artifacts/verbose
+
+Look for lines like:
+
+[metrics] elapsed=500ms rss=...kB tracked=...B peak=...B threads=...
+
+5. Simulated OOM
+----------------
+
+Forces the project allocator to fail after allocation attempt 20.
+
+./build/tatkal_poc \
+    --seats 10 \
+    --requests 1000 \
+    --workers 8 \
+    --fail-after 20 \
+    --output-dir artifacts/injected_oom
+
+6. High contention plus simulated OOM
+-------------------------------------
+
+Tests reservation failure and seat rollback.
+
+./build/tatkal_poc \
+    --seats 5 \
+    --requests 10000 \
+    --workers 16 \
+    --fail-after 40 \
+    --verbose \
+    --output-dir artifacts/contention_oom
+
+7. Real OS memory limit
+-----------------------
+
+Requires systemd-run. This limits the process group to 64 MiB with no swap.
+
+systemd-run --user --scope --wait \
+    -p MemoryMax=64M \
+    -p MemorySwapMax=0 \
+    ./build/tatkal_poc \
+        --seats 100 \
+        --requests 100000 \
+        --workers 8 \
+        --output-dir artifacts/os_limited
+
+If systemd-run is unavailable, use the simulated OOM command above.
+
+8. Run automated tests
+----------------------
+
+make test
+
+9. Run static analysis
+---------------------
+
+make cppcheck
+
+10. Run Valgrind
+---------------
+
+make valgrind
+
+11. Monitor whole-system memory
+------------------------------
+
+Run the stress command in one terminal. In another terminal:
+
+watch -n 1 free -h
+
+For CPU, memory, and swap activity:
+
+vmstat 1
+
+12. Monitor the application process
+------------------------------------
+
+In another terminal:
+
+watch -n 1 "ps -C tatkal_poc -o pid,%cpu,%mem,rss,vsz,nlwp,etime,cmd"
+
+RSS is physical memory used by the process. VSZ is virtual memory.
+
+13. Inspect the latest reports
+-----------------------------
+
+find artifacts -name summary.txt -type f -exec tail -n 20 {} \;
+find artifacts -name metrics.csv -type f -exec cat {} \;
+find artifacts -name system.csv -type f -exec cat {} \;
+find artifacts -name oom.log -type f -exec cat {} \;
+
+Expected results
+----------------
+
+- Baseline completes successfully.
+- Contention never confirms more seats than configured.
+- Simulated OOM reports allocation failures and continues.
+- Reservation OOM reports seat rollbacks.
+- Verbose mode prints process memory samples approximately every 500 ms.
+- OS-limited runs may be killed before final reports are written.
