@@ -43,6 +43,7 @@ void *memory_alloc(size_t size)
     if (current_bytes > peak_bytes) peak_bytes = current_bytes;
     allocations++;
     (void)pthread_mutex_unlock(&lock);
+    /* cppcheck-suppress memleak */
     return header + 1;
 }
 

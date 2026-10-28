@@ -17,7 +17,7 @@ LIB_SRC := src/config.c src/memory.c src/queue.c src/booking.c src/output.c
 APP_OBJ := $(APP_SRC:src/%.c=build/%.o)
 TEST_OBJ := $(LIB_SRC:src/%.c=build/gtest/%.o)
 
-.PHONY: all build misra-compile test run coverage cppcheck valgrind clean
+.PHONY: all build misra-compile test run coverage cppcheck valgrind helgrind clean
 
 all: build
 
@@ -80,6 +80,12 @@ valgrind: $(APP)
 	valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
 		./$(APP) --seats 10 --requests 100 --workers 4 \
 		--output-dir artifacts/valgrind
+
+helgrind: $(APP)
+	@mkdir -p artifacts/helgrind
+	valgrind --tool=helgrind --history-level=full --error-exitcode=1 \
+		./$(APP) --seats 100 --requests 10000 --workers 16 --verbose \
+		--output-dir artifacts/helgrind
 
 clean:
 	rm -rf build gtest/runTest

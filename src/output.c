@@ -19,12 +19,13 @@ static void *system_metrics_worker(void *argument)
 
     while (true) {
         FILE *status = fopen("/proc/self/status", "r");
-        char line[128];
         unsigned long rss_kb = 0;
         unsigned long virtual_kb = 0;
         unsigned long threads = 0;
 
         if (status != NULL) {
+            char line[128];
+
             while (fgets(line, sizeof(line), status) != NULL) {
                 if (sscanf(line, "VmRSS: %lu kB", &rss_kb) == 1) continue;
                 if (sscanf(line, "VmSize: %lu kB", &virtual_kb) == 1) continue;
