@@ -7,7 +7,7 @@ MISRA_CFLAGS := -Iinclude -std=c11 -D_POSIX_C_SOURCE=200809L \
 	-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wcast-qual \
 	-Wpointer-arith -Wstrict-prototypes -Wmissing-prototypes \
 	-Wold-style-definition -Wswitch-enum -Wundef -Wvla -Wformat=2 \
-	-Werror -g -O0
+	-Werror -fanalyzer -g -O0 
 
 APP := build/tatkal_poc
 TEST := gtest/runTest
@@ -73,7 +73,8 @@ coverage:
 
 cppcheck:
 	cppcheck --enable=warning,style,performance,portability \
-		--error-exitcode=1 --suppress=missingIncludeSystem src
+		--error-exitcode=1 --suppress=missingIncludeSystem \
+		--std=c11 -Iinclude src
 
 valgrind: $(APP)
 	@mkdir -p artifacts/valgrind
@@ -84,7 +85,7 @@ valgrind: $(APP)
 helgrind: $(APP)
 	@mkdir -p artifacts/helgrind
 	valgrind --tool=helgrind --history-level=full --error-exitcode=1 \
-		./$(APP) --seats 100 --requests 10000 --workers 16 --verbose \
+		./$(APP) --seats 100 --requests 10000 --fail-after 30 --workers 16 \
 		--output-dir artifacts/helgrind
 
 clean:
